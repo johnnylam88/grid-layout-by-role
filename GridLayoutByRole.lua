@@ -118,8 +118,10 @@ local MAX_UNITS = {
     Public properties
 --]]---------------------
 
--- Layout tables registed with GridLayout.
+-- Layout tables registered with GridLayout.
 GridLayoutByRole.layout = {}
+-- Layout tables by name.
+GridLayoutByRole.layoutByName = {}
 
 --[[------------------
 	Initialization
@@ -136,6 +138,7 @@ function GridLayoutByRole:PostInitialize()
 		[3] = {},	-- healers
 		[4] = {},	-- ranged
 	}
+	self.layoutByName[L["By Role"]] = self.layout[1]
 	self.layout[2] = {
 		[1] = {},	-- tanks
 		[2] = {},	-- melee
@@ -145,8 +148,10 @@ function GridLayoutByRole:PostInitialize()
 			isPetGroup = true,
 		},
 	}
-	GridLayout:AddLayout(L["By Role"], self.layout[1])
-	GridLayout:AddLayout(L["By Role w/Pets"], self.layout[2])
+	self.layoutByName[L["By Role w/Pets"]] = self.layout[2]
+	for name, layout in pairs(self.layoutByName) do
+		GridLayout:AddLayout(name, layout)
+	end
 end
 
 function GridLayoutByRole:PostEnable()
@@ -155,7 +160,7 @@ function GridLayoutByRole:PostEnable()
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "GroupInSpecT_Update")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Remove", "GroupInSpecT_Remove")
 	self:Hook(GridLayout, "ReloadLayout")
-	self:UpdateGroups()
+	self:UpdateGroups("PostEnable")
 end
 
 function GridLayoutByRole:PostDisable()
@@ -176,7 +181,7 @@ function GridLayoutByRole:ROLE_CHANGED_INFORM(event, changedPlayer, changedBy, o
 		local oldBlizzardRole = blizzardRoleByGUID[guid]
 		blizzardRoleByGUID[guid] = newRole
 		if oldBlizzardRole ~= newRole then
-			self:UpdateGroups()
+			self:UpdateGroups(event)
 		end
 	end
 end
@@ -187,14 +192,14 @@ function GridLayoutByRole:GroupInSpecT_Update(event, guid, unit, info)
 	blizzardRoleByGUID[guid] = info.spec_role
 	roleByGUID[guid] = info.spec_role_detailed
 	if oldBlizzardRole ~= blizzardRoleByGUID[guid] or oldRole ~= roleByGUID[guid] then
-		self:UpdateGroups()
+		self:UpdateGroups(event)
 	end
 end
 
 function GridLayoutByRole:GroupInSpecT_Remove(event, guid)
 	blizzardRoleByGUID[guid] = nil
 	roleByGUID[guid] = nil
-	self:UpdateGroups()
+	self:UpdateGroups(event)
 end
 
 --[[------------------
@@ -213,16 +218,17 @@ function GridLayoutByRole:GetRole(guid)
 end
 
 function GridLayoutByRole:ActiveLayoutByRole()
-	return self.layout[GridLayout.db.profile.layout]
+	return self.layoutByName[GridLayout.db.profile.layout]
 end
 
 -- Hook for GridLayout:ReloadLayout()
 -- Force updating the groups when reloading the layout to ensure the information is accurate.
 function GridLayoutByRole:ReloadLayout()
-	self:UpdateGroups()
+	self:UpdateGroups("ReloadLayout")
 end
 
-function GridLayoutByRole:UpdateGroups()
+function GridLayoutByRole:UpdateGroups(event)
+	self:Debug("UpdateGroups", event)
 	-- Update the name lists for each role.
 	for _, nameList in pairs(roleNameList) do
 		wipe(nameList)
