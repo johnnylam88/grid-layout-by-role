@@ -3,7 +3,7 @@
     See the file LICENSE.txt for copying permission.
 --]]--------------------------------------------------------------------
 
-GridLayoutByRole = Grid:NewModule("GridLayoutByRole")
+GridLayoutByRole = Grid:NewModule("GridLayoutByRole", "AceHook-3.0")
 
 local GridLayout = Grid:GetModule("GridLayout")
 local GridLayoutByRole = GridLayoutByRole
@@ -154,10 +154,12 @@ function GridLayoutByRole:PostEnable()
 	self:RegisterMessage("Grid_RosterUpdated", "UpdateGroups")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "GroupInSpecT_Update")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Remove", "GroupInSpecT_Remove")
+	self:Hook(GridLayout, "ReloadLayout")
 	self:UpdateGroups()
 end
 
 function GridLayoutByRole:PostDisable()
+	self:Unhook(GridLayout, "ReloadLayout")
 	self:UnregisterEvent("ROLE_CHANGED_INFORM")
 	self:UnregisterMessage("Grid_RosterUpdated")
 	LibGroupInSpecT.UnregisterCallback(self, "GroupInSpecT_Update")
@@ -212,6 +214,12 @@ end
 
 function GridLayoutByRole:ActiveLayoutByRole()
 	return self.layout[GridLayout.db.profile.layout]
+end
+
+-- Hook for GridLayout:ReloadLayout()
+-- Force updating the groups when reloading the layout to ensure the information is accurate.
+function GridLayoutByRole:ReloadLayout()
+	self:UpdateGroups()
 end
 
 function GridLayoutByRole:UpdateGroups()
