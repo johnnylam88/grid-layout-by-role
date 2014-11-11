@@ -3,7 +3,7 @@
     See the file LICENSE.txt for copying permission.
 --]]--------------------------------------------------------------------
 
-GridLayoutByRole = Grid:NewModule("GridLayoutByRole", "AceHook-3.0")
+GridLayoutByRole = Grid:NewModule("GridLayoutByRole")
 
 local GridLayout = Grid:GetModule("GridLayout")
 local GridLayoutByRole = GridLayoutByRole
@@ -11,6 +11,7 @@ local GridRoster = Grid:GetModule("GridRoster")
 local LibGroupInSpecT = LibStub:GetLibrary("LibGroupInSpecT-1.1")
 
 local ceil = math.ceil
+local ipairs = ipairs
 local pairs = pairs
 local select = select
 local setmetatable = setmetatable
@@ -133,6 +134,7 @@ function GridLayoutByRole:PostInitialize()
 
 	-- Add layouts to GridLayout.
 	self.layout[1] = {
+		defaults = {},
 		[1] = {},	-- tanks
 		[2] = {},	-- melee
 		[3] = {},	-- healers
@@ -140,6 +142,7 @@ function GridLayoutByRole:PostInitialize()
 	}
 	self.layoutByName[L["By Role"]] = self.layout[1]
 	self.layout[2] = {
+		defaults = {},
 		[1] = {},	-- tanks
 		[2] = {},	-- melee
 		[3] = {},	-- healers
@@ -159,12 +162,10 @@ function GridLayoutByRole:PostEnable()
 	self:RegisterMessage("Grid_RosterUpdated", "UpdateGroups")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "GroupInSpecT_Update")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Remove", "GroupInSpecT_Remove")
-	self:Hook(GridLayout, "ReloadLayout")
 	self:UpdateGroups("PostEnable")
 end
 
 function GridLayoutByRole:PostDisable()
-	self:Unhook(GridLayout, "ReloadLayout")
 	self:UnregisterEvent("ROLE_CHANGED_INFORM")
 	self:UnregisterMessage("Grid_RosterUpdated")
 	LibGroupInSpecT.UnregisterCallback(self, "GroupInSpecT_Update")
@@ -177,21 +178,23 @@ end
 
 function GridLayoutByRole:ROLE_CHANGED_INFORM(event, changedPlayer, changedBy, oldRole, newRole)
 	local guid = GridRoster:GetGUIDByFullName(changedPlayer)
-	if guid then
-		local oldBlizzardRole = blizzardRoleByGUID[guid]
+	if guid and blizzardRoleByGUID[guid] ~= newRole then
 		blizzardRoleByGUID[guid] = newRole
-		if oldBlizzardRole ~= newRole then
-			self:UpdateGroups(event)
-		end
+		self:UpdateGroups(event)
 	end
 end
 
 function GridLayoutByRole:GroupInSpecT_Update(event, guid, unit, info)
-	local oldBlizzardRole = blizzardRoleByGUID[guid]
-	local oldRole = roleByGUID[guid]
-	blizzardRoleByGUID[guid] = info.spec_role
-	roleByGUID[guid] = info.spec_role_detailed
-	if oldBlizzardRole ~= blizzardRoleByGUID[guid] or oldRole ~= roleByGUID[guid] then
+	local hasChanged = false
+	if blizzardRoleByGUID[guid] ~= info.spec_role then
+		blizzardRoleByGUID[guid] = info.spec_role
+		hasChanged = true
+	end
+	if roleByGUID[guid] ~= info.spec_role_detailed then
+		roleByGUID[guid] = info.spec_role_detailed
+		hasChanged = true
+	end
+	if hasChanged then
 		self:UpdateGroups(event)
 	end
 end
@@ -217,16 +220,6 @@ function GridLayoutByRole:GetRole(guid)
 	return ROLE_BY_BLIZZARD[blizzardRole]
 end
 
-function GridLayoutByRole:ActiveLayoutByRole()
-	return self.layoutByName[GridLayout.db.profile.layout]
-end
-
--- Hook for GridLayout:ReloadLayout()
--- Force updating the groups when reloading the layout to ensure the information is accurate.
-function GridLayoutByRole:ReloadLayout()
-	self:UpdateGroups("ReloadLayout")
-end
-
 function GridLayoutByRole:UpdateGroups(event)
 	self:Debug("UpdateGroups", event)
 	-- Update the name lists for each role.
@@ -240,48 +233,44 @@ function GridLayoutByRole:UpdateGroups(event)
 			tinsert(roleNameList[role], name)
 		end
 	end
+	self:UpdateLayout()
+end
+
+function GridLayoutByRole:UpdateLayout()
+	self:Debug("UpdateLayout")
+	local hasLayoutChanged = false
 	-- Update the default unitsPerColumn and maxColumns attributes.
 	do
 		local unitsPerColumn = 5
 		local partyState = GridRoster:GetPartyState()
 		local maxColumns = ceil(MAX_UNITS[partyState] / unitsPerColumn)
 		for _, layout in pairs(self.layout) do
-			for _, group in pairs(layout) do
-				group.unitsPerColumn = unitsPerColumn
-				group.maxColumns = maxColumns
+			local defaults = layout.defaults
+			if defaults.unitsPerColumn ~= unitsPerColumn then
+				defaults.unitsPerColumn = unitsPerColumn
+				hasLayoutChanged = true
+			end
+			if defaults.maxColumns ~= maxColumns then
+				defaults.maxColumns = maxColumns
+				hasLayoutChanged = true
 			end
 		end
 	end
 	-- Update the nameList attribute in each layout group.
-	for i, group in pairs(self.layout[1]) do
+	for i, group in ipairs(self.layout[1]) do
 		local role = groupRole[i]
-		local nameList = roleNameList[role]
-		group.nameList = tconcat(nameList, ",")
+		local nameList = tconcat(roleNameList[role], ",")
+		if group.nameList ~= nameList then
+			group.nameList = nameList
+			hasLayoutChanged = true
+		end
 	end
-	for i, group in pairs(self.layout[2]) do
+	for i, group in ipairs(self.layout[2]) do
 		if not group.isPetGroup then
 			group.nameList = self.layout[1][i].nameList
 		end
 	end
-
-	-- Update the attributes in the GridLayout secure group headers.
-	local activeLayout = self:ActiveLayoutByRole()
-	if activeLayout then
-		local hasGroupsChanged = false
-		for i, group in pairs(activeLayout) do
-			local layoutGroup = GridLayout.layoutGroups[i]
-			if layoutGroup then
-				for attr, value in pairs(group) do
-					local oldValue = layoutGroup:GetAttribute(attr)
-					if not oldValue or value ~= oldValue then
-						layoutGroup:SetAttribute(attr, value)
-						hasGroupsChanged = true
-					end
-				end
-			end
-		end
-		if hasGroupsChanged then
-			GridLayout:PartyMembersChanged()
-		end
+	if hasLayoutChanged then
+		self:SendMessage("Grid_ReloadLayout")
 	end
 end
