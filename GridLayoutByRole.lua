@@ -162,7 +162,6 @@ function GridLayoutByRole:PostEnable()
 	self:RegisterMessage("Grid_RosterUpdated", "UpdateGroups")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "GroupInSpecT_Update")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Remove", "GroupInSpecT_Remove")
-	self:UpdateGroups("PostEnable")
 end
 
 function GridLayoutByRole:PostDisable()
