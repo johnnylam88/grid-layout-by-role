@@ -39,69 +39,25 @@ local roleNameList = {
 	ranged = {},
 }
 
--- Map GUIDs to roles.
-local roleByGUID
-do
-	-- Default roles for each class in the absence of other information.
-	local DEFAULT_ROLE = {
-		DEATHKNIGHT = "melee",
-		DRUID = "ranged",
-		HUNTER = "ranged",
-		MAGE = "ranged",
-		MONK = "melee",
-		PALADIN = "melee",
-		PRIEST = "ranged",
-		ROGUE = "melee",
-		SHAMAN = "ranged",
-		WARLOCK = "ranged",
-		WARRIOR = "melee",
-	}
-
-	-- Ask LibGroupInSpecT for the guid's cached role if not already cached in the table.
-	local function GetRole(t, guid)
-		local info = LibGroupInSpecT:GetCachedInfo(guid)
-		local role = info and info.spec_role_detailed
-		if not role then
-			local class = info and info.class
-			if not class then
-				local unitId = LibGroupInSpecT:GuidToUnit(guid)
-				if unitId then
-					class = select(2, UnitClass(unitId))
-				end
-			end
-			role = class and DEFAULT_ROLE[class]
-		end
-		return role or "ranged"
-	end
-
-	roleByGUID = setmetatable({}, { __index = GetRole })
-end
-
--- Map GUIDs to Blizzard roles ("TANK", "DAMAGER", "HEALER", "NONE").
-local blizzardRoleByGUID
-do
-	local function GetBlizzardRole(t, guid)
-		local info = LibGroupInSpecT:GetCachedInfo(guid)
-		local role = info and info.spec_role
-		if not role then
-			local unitId = LibGroupInSpecT:GuidToUnit(guid)
-			if unitId then
-				role = UnitGroupRolesAssigned(unitId)
-			end
-		end
-		return role or "NONE"
-	end
-
-	blizzardRoleByGUID = setmetatable({}, { __index = GetBlizzardRole })
-end
-
--- Map Blizzard roles to LibGroupInSpecT roles.
-local ROLE_BY_BLIZZARD = {
-	TANK = "tank",
-	DAMAGER = "ranged",	-- unused entry
-	HEALER = "healer",
-	NONE = "ranged", -- unused entry
+-- Default roles for each class in the absence of other information.
+local DEFAULT_ROLE = {
+	DEATHKNIGHT = "melee",
+	DRUID = "ranged",
+	HUNTER = "ranged",
+	MAGE = "ranged",
+	MONK = "melee",
+	PALADIN = "melee",
+	PRIEST = "ranged",
+	ROGUE = "melee",
+	SHAMAN = "ranged",
+	WARLOCK = "ranged",
+	WARRIOR = "melee",
 }
+
+-- Map GUIDs to roles ("tank", "melee", "healer", "ranged").
+local roleByGUID = {}
+-- Map GUIDs to Blizzard roles ("TANK", "DAMAGER", "HEALER", "NONE").
+local blizzardRoleByGUID = {}
 
 -- Map GridRoster party states to the maximum number of units.
 local MAX_UNITS = {
@@ -208,15 +164,37 @@ end
 	Public methods
 --]]------------------
 
+-- Get the role of the GUID, preferring the Blizzard role for tanks and healers.
 function GridLayoutByRole:GetRole(guid)
-	local blizzardRole = blizzardRoleByGUID[guid]
-	local role = roleByGUID[guid]
-	if blizzardRole == "NONE" then
-		return role
-	elseif blizzardRole == "DAMAGER" then
-		return role
+	local info = LibGroupInSpecT:GetCachedInfo(guid)
+	-- Get the Blizzard role.
+	local blizzardRole = blizzardRoleByGUID[guid] or (info and info.spec_role)
+	if not blizzardRole then
+		local unitId = LibGroupInSpecT:GuidToUnit(guid)
+		if unitId then
+			blizzardRole = UnitGroupRolesAssigned(unitId)
+		else
+			blizzardRole = "NONE"
+		end
 	end
-	return ROLE_BY_BLIZZARD[blizzardRole]
+	-- Get the LibGroupInSpecT role.
+	local role = roleByGUID[guid] or (info and info.spec_role_detailed)
+	if not role then
+		local class = info and info.class
+		if not class then
+			local unitId = LibGroupInSpecT:GuidToUnit(guid)
+			if unitId then
+				class = select(2, UnitClass(unitId))
+			end
+		end
+		role = class and DEFAULT_ROLE[class] or "ranged"
+	end
+	if blizzardRole == "TANK" then
+		return "tank"
+	elseif blizzardRole == "HEALER" then
+		return "healer"
+	end
+	return role
 end
 
 function GridLayoutByRole:UpdateGroups(event)
