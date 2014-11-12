@@ -11,6 +11,7 @@ local GridRoster = Grid:GetModule("GridRoster")
 local LibGroupInSpecT = LibStub:GetLibrary("LibGroupInSpecT-1.1")
 
 local ceil = math.ceil
+local floor = math.floor
 local ipairs = ipairs
 local pairs = pairs
 local select = select
@@ -34,6 +35,7 @@ local groupRole = {
 }
 
 -- Map role to array of names of roster members in that role.
+-- Arrays are maintained in alphabetical order.
 local roleNameList = {
 	tank = {},
 	melee = {},
@@ -74,13 +76,62 @@ local MAX_UNITS = {
 }
 
 --[[---------------------
-    Public properties
+	Public properties
 --]]---------------------
 
 -- Layout tables registered with GridLayout.
 GridLayoutByRole.layout = {}
 -- Layout tables by name.
 GridLayoutByRole.layoutByName = {}
+
+--[[-------------------
+	Local functions
+--]]-------------------
+
+local binaryInsert
+local binarySearch
+do
+	-- Binary search algorithm pseudocode from: http://rosettacode.org/wiki/Binary_search
+
+	local compareDefault = function(a, b) return a < b end
+
+	-- Insert the value at the rightmost insertion point of a sorted array using binary search.
+	function binaryInsert(t, value, compare)
+		compare = compare or compareDefault
+		local low, high = 1, #t
+		while low <= high do
+			-- invariants: value >= t[i] for all i < low
+			--             value < t[i] for all i > high
+			local mid = floor((low + high) / 2)
+			if compare(value, t[mid]) then
+				high = mid - 1
+			else
+				low = mid + 1
+			end
+		end
+		tinsert(t, low, value)
+		return low
+	end
+
+	-- Return the index of the value in a sorted array using binary search.
+	function binarySearch(t, value, compare)
+		compare = compare or compareDefault
+		local low, high = 1, #t
+		while low <= high do
+			-- invariants: value > t[i] for all i < low
+			--             value < t[i] for all i > high
+			local mid = floor((low + high) / 2)
+			if compare(value, t[mid]) then
+				high = mid - 1
+			elseif compare(t[mid], value) then
+				low = mid + 1
+			else
+				return mid
+			end
+		end
+		return nil
+	end
+end
 
 --[[------------------
 	Initialization
@@ -203,12 +254,11 @@ end
 
 function GridLayoutByRole:RemoveName(name)
 	-- Remove the name from all role name lists.
-	for role, nameList in pairs(roleNameList) do
-		for i = #nameList, 1, -1 do
-			if nameList[i] == name then
-				tremove(nameList, i)
-				break
-			end
+	for _, nameList in pairs(roleNameList) do
+		local i = binarySearch(nameList, name)
+		if i then
+			tremove(nameList, i)
+			break
 		end
 	end
 end
@@ -225,7 +275,7 @@ function GridLayoutByRole:UpdateGUID(event, guid)
 		self:RemoveName(name)
 		-- Add the name to the correct role name list.
 		local role = self:GetRole(guid)
-		tinsert(roleNameList[role], name)
+		binaryInsert(roleNameList[role], name)
 		self:UpdateLayout()
 	end
 end
@@ -240,7 +290,7 @@ function GridLayoutByRole:UpdateAllGUIDs(event)
 		if not strfind(unit, "pet") then
 			local role = self:GetRole(guid)
 			local name = GridRoster:GetFullNameByGUID(guid)
-			tinsert(roleNameList[role], name)
+			binaryInsert(roleNameList[role], name)
 		end
 	end
 	self:UpdateLayout()
