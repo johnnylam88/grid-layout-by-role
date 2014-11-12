@@ -18,7 +18,9 @@ local setmetatable = setmetatable
 local strfind = string.find
 local tconcat = table.concat
 local tinsert = table.insert
+local tremove = table.remove
 local wipe = table.wipe
+local UNKNOWN = UNKNOWN		-- FrameXML/GlobalStrings.lua
 
 -- The localized string table.
 local L
@@ -115,14 +117,16 @@ end
 
 function GridLayoutByRole:PostEnable()
 	self:RegisterEvent("ROLE_CHANGED_INFORM")
-	self:RegisterMessage("Grid_RosterUpdated", "UpdateGroups")
+	self:RegisterMessage("Grid_UnitChanged", "UpdateGUID")
+	self:RegisterMessage("Grid_UnitJoined", "UpdateGUID")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "GroupInSpecT_Update")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Remove", "GroupInSpecT_Remove")
 end
 
 function GridLayoutByRole:PostDisable()
 	self:UnregisterEvent("ROLE_CHANGED_INFORM")
-	self:UnregisterMessage("Grid_RosterUpdated")
+	self:UnregisterMessage("Grid_UnitChanged")
+	self:UnregisterMessage("Grid_UnitJoined")
 	LibGroupInSpecT.UnregisterCallback(self, "GroupInSpecT_Update")
 	LibGroupInSpecT.UnregisterCallback(self, "GroupInSpecT_Remove")
 end
@@ -135,7 +139,7 @@ function GridLayoutByRole:ROLE_CHANGED_INFORM(event, changedPlayer, changedBy, o
 	local guid = GridRoster:GetGUIDByFullName(changedPlayer)
 	if guid and blizzardRoleByGUID[guid] ~= newRole then
 		blizzardRoleByGUID[guid] = newRole
-		self:UpdateGroups(event)
+		self:UpdateGUID(event, guid)
 	end
 end
 
@@ -150,14 +154,14 @@ function GridLayoutByRole:GroupInSpecT_Update(event, guid, unit, info)
 		hasChanged = true
 	end
 	if hasChanged then
-		self:UpdateGroups(event)
+		self:UpdateGUID(event, guid)
 	end
 end
 
 function GridLayoutByRole:GroupInSpecT_Remove(event, guid)
 	blizzardRoleByGUID[guid] = nil
 	roleByGUID[guid] = nil
-	self:UpdateGroups(event)
+	self:UpdateAllGUIDs(event)
 end
 
 --[[------------------
@@ -197,8 +201,37 @@ function GridLayoutByRole:GetRole(guid)
 	return role
 end
 
-function GridLayoutByRole:UpdateGroups(event)
-	self:Debug("UpdateGroups", event)
+function GridLayoutByRole:RemoveName(name)
+	-- Remove the name from all role name lists.
+	for role, nameList in pairs(roleNameList) do
+		for i = #nameList, 1, -1 do
+			if nameList[i] == name then
+				tremove(nameList, i)
+				break
+			end
+		end
+	end
+end
+
+function GridLayoutByRole:UpdateGUID(event, guid)
+	self:Debug("UpdateGUID", event, guid)
+	local name, realm = GridRoster:GetNameByGUID(guid)
+	if name == UNKNOWN then
+		self:UpdateAllGUIDs()
+	else
+		if realm then
+			name = name .. "-" .. realm
+		end
+		self:RemoveName(name)
+		-- Add the name to the correct role name list.
+		local role = self:GetRole(guid)
+		tinsert(roleNameList[role], name)
+		self:UpdateLayout()
+	end
+end
+
+function GridLayoutByRole:UpdateAllGUIDs(event)
+	self:Debug("UpdateAllGUIDs", event)
 	-- Update the name lists for each role.
 	for _, nameList in pairs(roleNameList) do
 		wipe(nameList)
