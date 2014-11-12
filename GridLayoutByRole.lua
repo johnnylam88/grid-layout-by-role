@@ -3,6 +3,15 @@
     See the file LICENSE.txt for copying permission.
 --]]--------------------------------------------------------------------
 
+--[[
+	GridLayoutByRole is a Grid layout plugin that groups roster members by role.
+
+	GridLayoutByRole manipulates the "nameList" attribute of layout groups used
+	by the secure group headers in GridLayout to place members into different
+	groups based on their role.  GridLayoutByRole differentiates between melee
+	and ranged DPS for raid roles.
+--]]
+
 GridLayoutByRole = Grid:NewModule("GridLayoutByRole")
 
 local GridLayout = Grid:GetModule("GridLayout")
