@@ -30,6 +30,11 @@ local tconcat = table.concat
 local tinsert = table.insert
 local tremove = table.remove
 local wipe = table.wipe
+-- local GetSpellInfo = GetSpellInfo
+-- local UnitBuff = UnitBuff
+-- local UnitClass = UnitClass
+-- local UnitGUID = UnitGUID
+-- local UnitGroupRolesAssigned = UnitGroupRolesAssigned
 local UNKNOWN = UNKNOWN		-- FrameXML/GlobalStrings.lua
 
 -- The localized string table.
@@ -83,6 +88,15 @@ local MAX_UNITS = {
 	raid_flex = 30,
 	solo = 1,
 }
+
+-- Global specialization ID for protection warriors.
+local WARRIOR_PROTECTION_SPEC_ID = 73
+-- Talent IDs for level-100 protection warrior talents.
+local ANGER_MANAGEMENT_TALENT = 21204
+local RAVAGER_TALENT = 21205
+local GLADIATORS_RESOLVE_TALENT = 21206
+-- Localized name of Gladiator Stance buff.
+local GLADIATOR_STANCE = GetSpellInfo(156291)
 
 --[[---------------------
 	Public properties
@@ -142,6 +156,29 @@ do
 	end
 end
 
+--[[
+	Filter return values from LibGroupInSpecT-1.1 to fix up the "spec_role_detailed"
+	returned via the "info" table for protection warrior tanks talented into
+	Gladiator's Resolve.
+--]]
+local function LibGroupInSpecT_GetRole(guid, unitId, info)
+	info = info or LibGroupInSpecT:GetCachedInfo(guid)
+	local role = info and info.spec_role_detailed
+	-- Fixup role if unit is a protection warrior in Gladiator Stance.
+	if info and info.global_spec_id == WARRIOR_PROTECTION_SPEC_ID then
+		-- Check for "not the other two level-100 talents" in case talent info isn't ready.
+		local talents = info.talents
+		if talents[GLADIATORS_RESOLVE_TALENT] or not talents[ANGER_MANAGEMENT_TALENT] and not talents[RAVAGER_TALENT] then
+			-- If the Gladiator Stance buff is present, then this is a melee DPS protection warrior.
+			unitId = unitId or LibGroupInSpecT:GuidToUnit(guid)
+			if unitId and UnitBuff(unitId, GLADIATOR_STANCE) then
+				role = "melee"
+			end
+		end
+	end
+	return role
+end
+
 --[[------------------
 	Initialization
 --]]------------------
@@ -177,14 +214,20 @@ end
 
 function GridLayoutByRole:PostEnable()
 	self:RegisterEvent("ROLE_CHANGED_INFORM")
+	self:RegisterEvent("PLAYER_REGEN_DISABLED")
+	self:RegisterEvent("PLAYER_REGEN_ENABLED")
+	self:RegisterEvent("UNIT_AURA")
 	self:RegisterMessage("Grid_UnitChanged", "UpdateGUID")
 	self:RegisterMessage("Grid_UnitJoined", "UpdateGUID")
-	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "GroupInSpecT_Update")
+	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Update", "UpdateRoleByGUID")
 	LibGroupInSpecT.RegisterCallback(self, "GroupInSpecT_Remove", "GroupInSpecT_Remove")
 end
 
 function GridLayoutByRole:PostDisable()
 	self:UnregisterEvent("ROLE_CHANGED_INFORM")
+	self:UnregisterEvent("PLAYER_REGEN_DISABLED")
+	self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+	self:UnregisterEvent("UNIT_AURA")
 	self:UnregisterMessage("Grid_UnitChanged")
 	self:UnregisterMessage("Grid_UnitJoined")
 	LibGroupInSpecT.UnregisterCallback(self, "GroupInSpecT_Update")
@@ -196,6 +239,7 @@ end
 --]]----------
 
 function GridLayoutByRole:ROLE_CHANGED_INFORM(event, changedPlayer, changedBy, oldRole, newRole)
+	self:Debug(event, changedPlayer, changedBy, oldRole, newRole)
 	local guid = GridRoster:GetGUIDByFullName(changedPlayer)
 	if guid and blizzardRoleByGUID[guid] ~= newRole then
 		blizzardRoleByGUID[guid] = newRole
@@ -203,22 +247,45 @@ function GridLayoutByRole:ROLE_CHANGED_INFORM(event, changedPlayer, changedBy, o
 	end
 end
 
-function GridLayoutByRole:GroupInSpecT_Update(event, guid, unit, info)
-	local hasChanged = false
-	if blizzardRoleByGUID[guid] ~= info.spec_role then
-		blizzardRoleByGUID[guid] = info.spec_role
-		hasChanged = true
+function GridLayoutByRole:PLAYER_REGEN_DISABLED(event)
+	self:Debug(event)
+	-- Unregister UNIT_AURA event handler when combat begins since protection warriors can't
+	-- change out of Gladiator Stance during combat.
+	self:UnregisterEvent("UNIT_AURA")
+end
+
+function GridLayoutByRole:PLAYER_REGEN_ENABLED(event)
+	self:Debug(event)
+	-- Register UNIT_AURA event handler when combat ends to watch for protection warriors
+	-- switching between Gladiator Stance and Defensive Stance.
+	self:RegisterEvent("UNIT_AURA")
+end
+
+function GridLayoutByRole:UNIT_AURA(event, unitId)
+	local guid = UnitGUID(unitId)
+	if LibGroupInSpecT:GuidToUnit(guid) then
+		local info = LibGroupInSpecT:GetCachedInfo(guid)
+		if info then
+			self:UpdateRoleByGUID(event, guid, unitId, info)
+		end
 	end
-	if roleByGUID[guid] ~= info.spec_role_detailed then
-		roleByGUID[guid] = info.spec_role_detailed
+end
+
+function GridLayoutByRole:UpdateRoleByGUID(event, guid, unitId, info)
+	local hasChanged = false
+	local role = LibGroupInSpecT_GetRole(guid, unitId, info)
+	if roleByGUID[guid] ~= role then
+		roleByGUID[guid] = role
 		hasChanged = true
 	end
 	if hasChanged then
+		self:Debug("UpdateRoleByGUID", unitId, role)
 		self:UpdateGUID(event, guid)
 	end
 end
 
 function GridLayoutByRole:GroupInSpecT_Remove(event, guid)
+	self:Debug(event, guid)
 	blizzardRoleByGUID[guid] = nil
 	roleByGUID[guid] = nil
 	self:UpdateAllGUIDs(event)
@@ -230,28 +297,31 @@ end
 
 -- Get the role of the GUID, preferring the Blizzard role for tanks and healers.
 function GridLayoutByRole:GetRole(guid)
+	local unitId
 	local info = LibGroupInSpecT:GetCachedInfo(guid)
-	-- Get the Blizzard role.
-	local blizzardRole = blizzardRoleByGUID[guid] or (info and info.spec_role)
+	-- Get and cache the Blizzard role.
+	local blizzardRole = blizzardRoleByGUID[guid]
 	if not blizzardRole then
-		local unitId = LibGroupInSpecT:GuidToUnit(guid)
+		unitId = unitId or LibGroupInSpecT:GuidToUnit(guid)
 		if unitId then
 			blizzardRole = UnitGroupRolesAssigned(unitId)
+			blizzardRoleByGUID[guid] = blizzardRole
 		else
 			blizzardRole = "NONE"
 		end
 	end
 	-- Get the LibGroupInSpecT role.
-	local role = roleByGUID[guid] or (info and info.spec_role_detailed)
+	local role = roleByGUID[guid]
 	if not role then
-		local class = info and info.class
-		if not class then
-			local unitId = LibGroupInSpecT:GuidToUnit(guid)
-			if unitId then
-				class = select(2, UnitClass(unitId))
+		unitId = unitId or LibGroupInSpecT:GuidToUnit(guid)
+		role = LibGroupInSpecT_GetRole(guid, unitId, info)
+		if not role then
+			local class = info and info.class
+			if not class then
+				class = unitId and select(2, UnitClass(unitId))
 			end
+			role = class and DEFAULT_ROLE[class] or "ranged"
 		end
-		role = class and DEFAULT_ROLE[class] or "ranged"
 	end
 	if blizzardRole == "TANK" then
 		return "tank"
