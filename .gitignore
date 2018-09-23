@@ -1,3 +1,9 @@
+.release/**
 ChangeLog*
+CHANGELOG*
+*.tmp
 libs/*
+!libs/*.xml
+tests/OUT*
+tests/*.bat
 tmp/**
