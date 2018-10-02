@@ -27,11 +27,14 @@ local next = next
 local pairs = pairs
 local select = select
 local setmetatable = setmetatable
+local strsub = string.sub
 local tconcat = table.concat
 local tinsert = table.insert
+local tonumber = tonumber
 local wipe = table.wipe
 -- local CanInspect = CanInspect
 -- local CheckInteractDistance = CheckInteractDistance
+-- local GetClassInfo = GetClassInfo
 -- local GetInspectSpecialization = GetInspectSpecialization
 -- local GetInstanceInfo = GetInstanceInfo
 -- local InCombatLockdown = InCombatLockdown
@@ -44,7 +47,7 @@ local MEMBERS_PER_RAID_GROUP = MEMBERS_PER_RAID_GROUP -- FrameXML/RaidFrame
 local UNKNOWN = UNKNOWN -- FrameXML/GlobalStrings.lua
 
 -- The localized string table.
-local L
+local L = setmetatable({}, { __index = function(t, k) return k end })
 
 -- String constants for roles.
 local TANK = "TANK"
@@ -70,13 +73,6 @@ GridLayoutByRole.layout = {}
 GridLayoutByRole.blizzardRoleByGUID = {}
 -- Map GUIDs to roles (TANK, MELEE, HEALER, RANGED).
 GridLayoutByRole.roleByGUID = {}
--- May layout groups to roles (TANK, MELEE, HEALER, RANGED).
-GridLayoutByRole.roleByGroup = {
-	[1] = TANK,
-	[2] = MELEE,
-	[3] = HEALER,
-	[4] = RANGED,
-}
 -- List of tables of GUIDs by role.
 -- roleGroup[role][guid] is the full name for guid if guid is in that role.
 GridLayoutByRole.roleGroup = {
@@ -85,6 +81,91 @@ GridLayoutByRole.roleGroup = {
 	[HEALER] = {},
 	[RANGED] = {},
 }
+
+do
+	GridLayoutByRole.defaultDB = {
+		debug = false,
+		-- Map layout groups to raid role.
+		role = {
+			[1] = TANK,
+			[2] = MELEE,
+			[3] = HEALER,
+			[4] = RANGED,
+		},
+	}
+
+	--[[
+		1st group: [dropdown] (tank/melee/healer/ranged)
+		2nd group: [dropdown] (tank/melee/healer/ranged)
+		3rd group: [dropdown] (tank/melee/healer/ranged)
+		4th group: [dropdown] (tank/melee/healer/ranged)
+
+		Healers to display as melee role:
+		[ ] Druid
+		[ ] Monk
+		[ ] Paladin
+		[ ] Priest
+		[ ] Shaman
+	--]]
+
+	local roleSelect = {
+		[TANK] = L["Tank"],
+		[MELEE] = L["Melee"],
+		[HEALER] = L["Healer"],
+		[RANGED] = L["Ranged"],
+	}
+
+	GridLayoutByRole.options = {
+		name = L["Raid Role Groups"],
+		type = "group",
+		args = {
+			roles = {
+				name = L["Group Roles"],
+				desc = L["Assign roles to display in each group."],
+				order = 10,
+				type = "group",
+				inline = true,
+				get = function(info)
+					-- Strip "group" from "groupN".
+					local index = tonumber(strsub(info[#info], 6))
+					return GridLayoutByRole.db.profile.role[index]
+				end,
+				set = function(info, v)
+					-- Strip "group" from "groupN".
+					local index = tonumber(strsub(info[#info], 6))
+					GridLayoutByRole.db.profile.role[index] = v or nil
+					GridLayoutByRole:UpdateLayout()
+				end,
+				args = {
+					group1 = {
+						name = L["Group 1"],
+						order = 10,
+						type = "select",
+						values = roleSelect,
+					},
+					group2 = {
+						name = L["Group 2"],
+						order = 20,
+						type = "select",
+						values = roleSelect,
+					},
+					group3 = {
+						name = L["Group 3"],
+						order = 30,
+						type = "select",
+						values = roleSelect,
+					},
+					group4 = {
+						name = L["Group 4"],
+						order = 40,
+						type = "select",
+						values = roleSelect,
+					},
+				},
+			},
+		},
+	}
+end
 
 --[[-------------------
 	Local functions
@@ -129,7 +210,7 @@ function GridLayoutByRole:PostInitialize()
 		unitsPerColumn = MEMBERS_PER_RAID_GROUP,
 	}
 	-- Initialize empty group for each role.
-	for i in ipairs(self.roleByGroup) do
+	for i in ipairs(self.db.profile.role) do
 		layout[i] = {}
 	end
 	GridLayout:AddLayout("ByRaidRole", layout)
@@ -457,7 +538,7 @@ function GridLayoutByRole:UpdateLayout()
 	end
 
 	-- Update the nameList attribute in each layout group.
-	for i, role in ipairs(self.roleByGroup) do
+	for i, role in ipairs(self.db.profile.role) do
 		local group = self.layout[i]
 		local nameList = self:NameList(role)
 		if group.nameList ~= nameList then
@@ -468,7 +549,7 @@ function GridLayoutByRole:UpdateLayout()
 	end
 
 	-- Add the pet group if selected.
-	local numGroups = #self.roleByGroup
+	local numGroups = #self.db.profile.role
 	if GridLayout.db.profile.showPets then
 		self.layout[numGroups + 1] = petGroup
 	else
