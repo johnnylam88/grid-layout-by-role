@@ -92,6 +92,8 @@ do
 			[3] = HEALER,
 			[4] = RANGED,
 		},
+		-- Healer classes that should be displayed in the melee role.
+		meleeHealer = {},
 	}
 
 	--[[
@@ -113,6 +115,14 @@ do
 		[MELEE] = L["Melee"],
 		[HEALER] = L["Healer"],
 		[RANGED] = L["Ranged"],
+	}
+
+	local healerClassLocalization = {
+		PALADIN = GetClassInfo(2),
+		--PRIEST = GetClassInfo(5),
+		--SHAMAN = GetClassInfo(7),
+		MONK = GetClassInfo(10),
+		--DRUID = GetClassInfo(11),
 	}
 
 	GridLayoutByRole.options = {
@@ -162,6 +172,23 @@ do
 						values = roleSelect,
 					},
 				},
+			},
+			meleeHealer = {
+				name = L["Melee healers"],
+				desc = L["Healers to display in the melee role."],
+				order = 20,
+				type = "multiselect",
+				values = healerClassLocalization,
+				get = function(info, k)
+					return GridLayoutByRole.db.profile.meleeHealer[k]
+				end,
+				set = function(info, k, v)
+					GridLayoutByRole.db.profile.meleeHealer[k] = v or nil
+					-- Re-check the roles for the entire group.
+					for guid, unit in GridRoster:IterateRoster() do
+						GridLayoutByRole:QueueRoleCheck(guid, unit)
+					end
+				end,
 			},
 		},
 	}
@@ -454,11 +481,15 @@ do
 	function GridLayoutByRole:GetSpecializationRole(guid)
 		local unit = GridRoster:GetUnitidByGUID(guid)
 		if unit then
+			local class = select(2, UnitClass(unit))
 			local specialization = GetInspectSpecialization(unit)
-			local role = roleBySpecialization[specialization]
+			local role = specialization and roleBySpecialization[specialization]
 			if not role then
-				local class = select(2, UnitClass(unit))
 				role = class and roleByClass[class] or RANGED
+			end
+			-- Adjust raid role if this healer is a "melee healer".
+			if role == HEALER and class and self.db.profile.meleeHealer[class] then
+				role = MELEE
 			end
 			return role
 		end
@@ -466,13 +497,11 @@ do
 	end
 end
 
--- Get the role of the GUID; prefer the Blizzard role for tanks and healers.
+-- Get the role of the GUID; prefer the Blizzard role for tanks.
 function GridLayoutByRole:GetRole(guid)
 	local role = self:GetBlizzardRole(guid)
 	if role == "TANK" then
 		role = TANK
-	elseif role == "HEALER" then
-		role = HEALER
 	else
 		role = self:GetSpecializationRole(guid)
 	end
