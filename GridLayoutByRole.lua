@@ -426,7 +426,7 @@ do
 		-- Hunter
 		[253] = RANGED,	-- Beast Mastery
 		[254] = RANGED,	-- Marksmanship
-		[255] = RANGED,	-- Survival
+		[255] = MELEE,	-- Survival
 		-- Mage
 		[62] = RANGED,	-- Arcane
 		[63] = RANGED,	-- Fire
