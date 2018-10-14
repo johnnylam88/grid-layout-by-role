@@ -5,6 +5,11 @@
 ## Notes: Grid layout grouped by raid role.
 
 ## Author: Johnny C. Lam
+## X-License: BSD License
+## X-Website: https://wow.curseforge.com/projects/grid-layout-by-role
+## X-Curse-Project-ID: 86557
+## X-WoWI-ID: 24827
+
 ## Dependencies: Grid
 
 #@no-lib-strip@
