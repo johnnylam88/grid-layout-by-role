@@ -121,10 +121,10 @@ do
 
 	local healerClassLocalization = {
 		PALADIN = GetClassInfo(2),
-		--PRIEST = GetClassInfo(5),
-		--SHAMAN = GetClassInfo(7),
+		PRIEST = GetClassInfo(5),
+		SHAMAN = GetClassInfo(7),
 		MONK = GetClassInfo(10),
-		--DRUID = GetClassInfo(11),
+		DRUID = GetClassInfo(11),
 	}
 
 	GridLayoutByRole.options = {
@@ -177,7 +177,7 @@ do
 			},
 			meleeHealer = {
 				name = L["Melee healers"],
-				desc = L["Healers to display in the melee role."],
+				desc = L["Healer classes to display in the melee role."],
 				order = 20,
 				type = "multiselect",
 				values = healerClassLocalization,
