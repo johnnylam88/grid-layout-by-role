@@ -296,8 +296,13 @@ do
 	local timer -- timer for requesting notifications for pending inspections
 	local eventRegistered -- true if INSPECT_READY is registered
 
+	-- Export for debugging.
+	GridLayoutByRole.inspectPending = inspectPending
+
 	function GridLayoutByRole:QueueRoleCheck(event, guid, unit)
-		if not inspectPending[guid] then
+		if inspectPending[guid] then
+			self:Debug("QueueRoleCheck", event, guid, unit, "pending")
+		else
 			self:Debug("QueueRoleCheck", event, guid, unit)
 			if isPetUnit(unit) then
 				-- Pets don't need to be inspected; their role is always "PET".
@@ -320,12 +325,13 @@ do
 			if unit and UnitIsConnected(unit) then
 				if not eventRegistered then
 					self:Debug("NotifyInspect", "INSPECT_READY")
-					self:RegisterEvent("INSPECT_READY")
+					self:RegisterEvent("INSPECT_READY", "InspectReady")
 					eventRegistered = true
 				end
 				NotifyInspect(unit)
 			else
 				-- Prune pending inspections for units that are no longer in group or are disconnected.
+				self:Debug("NotifyInspect", guid, "pruned")
 				inspectPending[guid] = nil
 			end
 		end
@@ -354,14 +360,14 @@ do
 		end
 	end
 
-	function GridLayoutByRole:INSPECT_READY(event, guid)
+	function GridLayoutByRole:InspectReady(event, guid)
 		if inspectPending[guid] then
 			local unit = GridRoster:GetUnitidByGUID(guid)
 			if unit then
 				local specialization, class = self:GetUnitSpecialization(unit)
 				-- Only removing pending inspection if the specialization information is available.
 				if specialization and class then
-					self:Debug(event, guid)
+					self:Debug("InspectReady", event, guid, class, specialization)
 					self:UnqueueRoleCheck(guid)
 					local role = self:GetRole(guid, unit, class, specialization)
 					self:UpdateRole(guid, unit, role)
