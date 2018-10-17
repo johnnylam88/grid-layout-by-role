@@ -557,7 +557,7 @@ do
 		if not roleBySpecialization[specialization] then
 			specialization = nil
 		end
-		local class = UnitClass(unit)
+		local _, class = UnitClass(unit)
 		return specialization, class
 	end
 
