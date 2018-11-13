@@ -10,6 +10,8 @@
 ## X-Curse-Project-ID: 86557
 ## X-WoWI-ID: 24827
 
+## X-Embeds: MooInspect-1.0, MooSpec-1.0, MooUnit-1.0
+## OptionalDeps: MooInspect-1.0, MooSpec-1.0, MooUnit-1.0
 ## Dependencies: Grid
 
 embeds.xml

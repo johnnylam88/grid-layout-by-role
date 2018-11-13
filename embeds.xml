@@ -2,4 +2,7 @@
 ..\FrameXML\UI.xsd">
 	<Script  file="Libs\LibStub\LibStub.lua" />
 	<Include file="Libs\CallbackHandler-1.0\CallbackHandler-1.0.xml" />
+	<Include file="Libs\MooUnit-1.0\MooUnit-1.0.xml" />
+	<Include file="Libs\MooInspect-1.0\MooInspect-1.0.xml" />
+	<Include file="Libs\MooSpec-1.0\MooSpec-1.0.xml" />
 </Ui>
