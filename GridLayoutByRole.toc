@@ -12,9 +12,5 @@
 
 ## Dependencies: Grid
 
-#@no-lib-strip@
-Libs\LibStub\LibStub.lua
-Libs\CallbackHandler-1.0\CallbackHandler-1.0.lua
-#@end-no-lib-strip@
-
+embeds.xml
 GridLayoutByRole.lua
