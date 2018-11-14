@@ -26,6 +26,7 @@ local tconcat = table.concat
 local tinsert = table.insert
 local tonumber = tonumber
 local wipe = table.wipe
+-- GLOBALS: _G
 -- GLOBALS: GetClassInfo
 -- GLOBALS: GetInstanceInfo
 -- GLOBALS: LibStub
@@ -40,7 +41,12 @@ local GridRoster = Grid:GetModule("GridRoster")
 local MooSpec = LibStub("MooSpec-1.0")
 
 -- The localized string table.
-local L = setmetatable({}, { __index = function(t, k) return k end })
+local L = Grid.L
+do
+	L["Group"] = _G.GROUP
+	L["Healer"] = _G.HEALER
+	L["Tank"] = _G.TANK
+end
 
 -- Pet layout group.
 local petGroup = {
@@ -135,25 +141,25 @@ do
 				end,
 				args = {
 					group1 = {
-						name = L["Group 1"],
+						name = L["Group"] .. " 1",
 						order = 10,
 						type = "select",
 						values = roleSelect,
 					},
 					group2 = {
-						name = L["Group 2"],
+						name = L["Group"] .. " 2",
 						order = 20,
 						type = "select",
 						values = roleSelect,
 					},
 					group3 = {
-						name = L["Group 3"],
+						name = L["Group"] .. " 3",
 						order = 30,
 						type = "select",
 						values = roleSelect,
 					},
 					group4 = {
-						name = L["Group 4"],
+						name = L["Group"] .. " 4",
 						order = 40,
 						type = "select",
 						values = roleSelect,
