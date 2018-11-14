@@ -12,18 +12,13 @@
 	different groups based on their role.
 --]]
 
-local GridLayout = Grid:GetModule("GridLayout")
-local GridRoster = Grid:GetModule("GridRoster")
+-- GLOBALS: Grid
 
-local GridLayoutByRole = Grid:NewModule("GridLayoutByRole", "AceTimer-3.0")
---@debug@
-_G.GridLayoutByRole = GridLayoutByRole
---@end-debug@
+local GridLayoutByRole = Grid:NewModule("GridLayoutByRole")
 
 local ceil = math.ceil
 local floor = math.floor
 local ipairs = ipairs
-local next = next
 local pairs = pairs
 local setmetatable = setmetatable
 local strsub = string.sub
@@ -31,28 +26,21 @@ local tconcat = table.concat
 local tinsert = table.insert
 local tonumber = tonumber
 local wipe = table.wipe
--- GLOBALS: CanInspect
--- GLOBALS: CheckInteractDistance
 -- GLOBALS: GetClassInfo
--- GLOBALS: GetInspectSpecialization
 -- GLOBALS: GetInstanceInfo
--- GLOBALS: NotifyInspect
+-- GLOBALS: LibStub
 -- GLOBALS: UnitClass
 -- GLOBALS: UnitGUID
--- GLOBALS: UnitGroupRolesAssigned
--- GLOBALS: UnitIsConnected
+-- GLOBALS: UnitIsPlayer
 local MAX_RAID_MEMBERS = MAX_RAID_MEMBERS -- FrameXML/RaidFrame.lua
 local MEMBERS_PER_RAID_GROUP = MEMBERS_PER_RAID_GROUP -- FrameXML/RaidFrame.lua
 
+local GridLayout = Grid:GetModule("GridLayout")
+local GridRoster = Grid:GetModule("GridRoster")
+local MooSpec = LibStub("MooSpec-1.0")
+
 -- The localized string table.
 local L = setmetatable({}, { __index = function(t, k) return k end })
-
--- String constants for roles.
-local TANK = "TANK"
-local MELEE = "MELEE"
-local HEALER = "HEALER"
-local RANGED = "RANGED"
-local PET = "PET"
 
 -- Pet layout group.
 local petGroup = {
@@ -61,25 +49,22 @@ local petGroup = {
 	groupingOrder = "HUNTER,WARLOCK,MAGE,DEATHKNIGHT,DRUID,PRIEST,SHAMAN,MONK,PALADIN,DEMONHUNTER,ROGUE,WARRIOR",
 }
 
---[[---------------------
-	Public properties
---]]---------------------
+---------------------------------------------------------------------
 
 -- Layout table registered with GridLayout.
 GridLayoutByRole.layout = {}
 
--- Map GUIDs to Blizzard roles ("TANK", "DAMAGER", "HEALER", "NONE").
-GridLayoutByRole.blizzardRoleByGUID = {}
--- Map GUIDs to roles (TANK, MELEE, HEALER, RANGED).
+-- Map GUIDs to roles ("tank", "melee", "healer", "ranged").
 GridLayoutByRole.roleByGUID = {}
+-- Map GUIDs to classes ("PALADIN", "MONK", etc.)
+GridLayoutByRole.classByGUID = {}
 -- List of tables of GUIDs by role.
--- roleGroup[role][guid] is the full name for guid if guid is in that role.
+-- roleGroup[role][guid] is true if guid is in that role.
 GridLayoutByRole.roleGroup = {
-	[TANK] = {},
-	[MELEE] = {},
-	[HEALER] = {},
-	[RANGED] = {},
-	[PET] = {},
+	tank = {},
+	melee = {},
+	healer = {},
+	ranged = {},
 }
 
 do
@@ -87,10 +72,10 @@ do
 		debug = false,
 		-- Map layout groups to raid role.
 		role = {
-			[1] = TANK,
-			[2] = MELEE,
-			[3] = HEALER,
-			[4] = RANGED,
+			[1] = "tank",
+			[2] = "melee",
+			[3] = "healer",
+			[4] = "ranged",
 		},
 		-- Healer classes that should be displayed in the melee role.
 		meleeHealer = {},
@@ -113,10 +98,10 @@ do
 	--]]
 
 	local roleSelect = {
-		[TANK] = L["Tank"],
-		[MELEE] = L["Melee"],
-		[HEALER] = L["Healer"],
-		[RANGED] = L["Ranged"],
+		tank = L["Tank"],
+		melee = L["Melee"],
+		healer = L["Healer"],
+		ranged = L["Ranged"],
 	}
 
 	local healerClassLocalization = {
@@ -186,7 +171,7 @@ do
 				end,
 				set = function(info, k, v)
 					GridLayoutByRole.db.profile.meleeHealer[k] = v
-					GridLayoutByRole:InspectUnits()
+					GridLayoutByRole:UpdateRoster()
 				end,
 			},
 			useBlizzardRole = {
@@ -199,16 +184,14 @@ do
 				end,
 				set = function(info, value)
 					GridLayoutByRole.db.profile.useBlizzardRole = value
-					GridLayoutByRole:InspectUnits()
+					GridLayoutByRole:UpdateRoster()
 				end,
 			},
 		},
 	}
 end
 
---[[-------------------
-	Local functions
---]]-------------------
+---------------------------------------------------------------------
 
 -- Insert the value at the rightmost insertion point of a sorted array using
 -- binary search.  Returns the array index at which the value was inserted.
@@ -229,19 +212,9 @@ local function binaryInsert(t, value)
 	return low
 end
 
--- Returns true if unit is a pet, or nil otherwise.
-local function isPetUnit(unit)
-	return GridRoster:GetOwnerUnitidByUnitid(unit) and true or nil
-end
-
---[[------------------
-	Initialization
---]]------------------
+---------------------------------------------------------------------
 
 function GridLayoutByRole:PostInitialize()
-	-- Localization.
-	L = setmetatable({}, { __index = function(t, k) return k end })
-
 	local layout = self.layout
 	layout.name = L["By Raid Role"]
 	layout.defaults = {
@@ -256,332 +229,136 @@ function GridLayoutByRole:PostInitialize()
 end
 
 function GridLayoutByRole:PostEnable()
-	self:RegisterEvent("PLAYER_ENTERING_WORLD")
-	self:RegisterEvent("PLAYER_REGEN_DISABLED")
-	self:RegisterEvent("PLAYER_REGEN_ENABLED")
-	self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED", "UnitSpecializationChanged")
-	self:RegisterEvent("ROLE_CHANGED_INFORM")
-	self:RegisterEvent("UNIT_CONNECTION")
-	self:RegisterMessage("Grid_UnitChanged", "UnitChanged")
-	self:RegisterMessage("Grid_UnitJoined", "UnitJoined")
-	self:RegisterMessage("Grid_UnitLeft", "UnitLeft")
-	self:RegisterMessage("Grid_UnitRoleChanged", "UnitRoleChanged")
+	self:RegisterMessage("Grid_UnitChanged", "OnUnitJoined")
+	self:RegisterMessage("Grid_UnitJoined", "OnUnitJoined")
+	self:RegisterMessage("Grid_UnitLeft", "OnUnitLeft")
+	MooSpec.RegisterCallback(self, "MooSpec_UnitRoleChanged", "OnUnitRoleChanged")
 end
 
 function GridLayoutByRole:PostDisable()
-	self:UnregisterEvent("PLAYER_ENTERING_WORLD")
-	self:UnregisterEvent("PLAYER_REGEN_DISABLED")
-	self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-	self:UnregisterEvent("PLAYER_SPECIALIZATION_CHANGED")
-	self:UnregisterEvent("ROLE_CHANGED_INFORM")
-	self:UnregisterEvent("UNIT_CONNECTION")
 	self:UnregisterMessage("Grid_UnitChanged")
 	self:UnregisterMessage("Grid_UnitJoined")
 	self:UnregisterMessage("Grid_UnitLeft")
-	self:UnregisterMessage("Grid_UnitRoleChanged")
+	MooSpec.UnregisterCallback(self, "MooSpec_UnitRoleChanged")
 end
 
---[[------------------
-	Public methods
---]]------------------
+---------------------------------------------------------------------
 
---[[
-	The QueueRoleCheck, NotifyInspect, INSPECT_READY, and UpdateRole
-	methods work together to update the role for a group unit.
-	QueueRoleCheck is the entry point, which triggers NotifyInspect,
-	which sets up a listener for INSPECT_READY to call UpdateRole.
---]]
-do
-	local inspectPending = {} -- inspectPending[guid] = true if an inspection is pending for the guid
-	local timer -- timer for requesting notifications for pending inspections
-	local eventRegistered -- true if INSPECT_READY is registered
-
-	-- Export for debugging.
-	GridLayoutByRole.inspectPending = inspectPending
-
-	function GridLayoutByRole:QueueRoleCheck(event, guid, unit)
-		if inspectPending[guid] then
-			self:Debug("QueueRoleCheck", event, guid, unit, "pending")
-		else
-			self:Debug("QueueRoleCheck", event, guid, unit)
-			if isPetUnit(unit) then
-				-- Pets don't need to be inspected; their role is always "PET".
-				self:UpdateRole(guid, unit, PET)
-			else
-				inspectPending[guid] = true
-				self:NotifyInspect()
-			end
-		end
-	end
-
-	function GridLayoutByRole:UnqueueRoleCheck(guid)
-		inspectPending[guid] = nil
-		self:PendingInspectionCheck()
-	end
-
-	function GridLayoutByRole:NotifyInspect()
-		for guid in pairs(inspectPending) do
-			local unit = GridRoster:GetUnitidByGUID(guid)
-			if unit and UnitIsConnected(unit) then
-				if not eventRegistered then
-					self:Debug("NotifyInspect", "INSPECT_READY")
-					self:RegisterEvent("INSPECT_READY", "InspectReady")
-					eventRegistered = true
-				end
-				NotifyInspect(unit)
-			else
-				-- Prune pending inspections for units that are no longer in group or are disconnected.
-				self:Debug("NotifyInspect", guid, "pruned")
-				inspectPending[guid] = nil
-			end
-		end
-		self:PendingInspectionCheck()
-	end
-
-	function GridLayoutByRole:PendingInspectionCheck()
-		if next(inspectPending) then
-			-- Start a repeating timer to request notification for each pending inspection.
-			timer = timer or self:StartTimer("NotifyInspect", 0.3, true)
-		else
-			self:PauseInspections()
-		end
-	end
-
-	function GridLayoutByRole:PauseInspections()
-		-- Unregister INSPECT_READY event and stop the timer.
-		if eventRegistered then
-			self:Debug("PendingInspectionCheck", "INSPECT_READY")
-			self:UnregisterEvent("INSPECT_READY")
-			eventRegistered = nil
-		end
-		if timer then
-			self:StopTimer("NotifyInspect")
-			timer = nil
-		end
-	end
-
-	function GridLayoutByRole:InspectReady(event, guid)
-		if inspectPending[guid] then
-			local unit = GridRoster:GetUnitidByGUID(guid)
-			if unit then
-				local specialization, class = self:GetUnitSpecialization(unit)
-				-- Only removing pending inspection if the specialization information is available.
-				if specialization and class then
-					self:Debug("InspectReady", event, guid, class, specialization)
-					self:UnqueueRoleCheck(guid)
-					local role = self:GetRole(guid, unit, class, specialization)
-					self:UpdateRole(guid, unit, role)
-				end
-			else
-				-- GUID is no longer in the group.
-				self:UnitLeft(event, guid)
-			end
-		end
-	end
-
-	function GridLayoutByRole:PLAYER_REGEN_DISABLED(event)
-		self:PauseInspections()
-	end
-
-	function GridLayoutByRole:PLAYER_REGEN_ENABLED(event)
-		self:PendingInspectionCheck()
-	end
+local function IsGroupMember(guid, unit)
+	return GridRoster:IsGUIDInGroup(guid) and UnitIsPlayer(unit)
 end
 
-function GridLayoutByRole:PLAYER_ENTERING_WORLD(event)
-	self:UnitSpecializationChanged(event, "player")
-end
-
-function GridLayoutByRole:ROLE_CHANGED_INFORM(event, changedPlayer, changedBy, oldRole, newRole)
-	self:Debug(event, changedPlayer, changedBy, oldRole, newRole)
-	local guid = GridRoster:GetGUIDByFullName(changedPlayer)
-	if guid then
-		local unit = GridRoster:GetUnitidByGUID(guid)
-		if unit then
-			if self.blizzardRoleByGUID[guid] ~= newRole then
-				self.blizzardRoleByGUID[guid] = newRole
-			end
-			self:QueueRoleCheck(event, guid, unit)
-		else
-			-- GUID is no longer in the group.
-			self:UnitLeft(event, guid)
+function GridLayoutByRole:OnUnitJoined(event, guid, unit)
+	self:Debug("OnUnitJoined", event, guid, unit)
+	if IsGroupMember(guid, unit) then
+		self:UpdateClass(guid, unit)
+		local changed = self:UpdateRole(guid)
+		if changed then
+			self:UpdateLayout()
 		end
 	end
 end
 
-function GridLayoutByRole:UNIT_CONNECTION(event, unit, isConnected)
-	self:UnitSpecializationChanged(event, unit)
-end
-
-function GridLayoutByRole:UnitChanged(event, guid, unit)
-	self:Debug("UnitChanged", event, guid, unit)
-	-- Force layout update due to changes.
-	self:UpdateLayout()
-end
-
-function GridLayoutByRole:UnitJoined(event, guid, unit)
-	self:Debug("UnitJoined", event, guid, unit)
-	-- Initialize to a default role.
-	local role = self:GetDefaultRole(unit)
-	self:UpdateRole(guid, unit, role)
-	-- Queue a check for the correct role.
-	self:QueueRoleCheck("UnitJoined", guid, unit)
-end
-
-function GridLayoutByRole:UnitLeft(event, guid)
-	self:Debug("UnitLeft", event, guid)
-	self:UnqueueRoleCheck(guid)
-	self.blizzardRoleByGUID[guid] = nil
-	self.roleByGUID[guid] = nil
+function GridLayoutByRole:OnUnitLeft(event, guid)
+	self:Debug("OnUnitLeft", event, guid)
+	local changed = false
 	for _, group in pairs(self.roleGroup) do
-		group[guid] = nil
+		if group[guid] then
+			group[guid] = nil
+			changed = true
+		end
 	end
-	self:UpdateLayout()
-end
-
-function GridLayoutByRole:UnitRoleChanged(event, guid, unit, oldRole, newRole)
-	self:Debug("UnitRoleChanged", event, guid, unit, oldRole, newRole)
-	self:UpdateLayout()
-end
-
-function GridLayoutByRole:UnitSpecializationChanged(event, unit)
-	self:Debug("UnitSpecializationChanged", event, unit)
-	local guid = UnitGUID(unit)
-	if guid then
-		self:QueueRoleCheck(event, guid, unit)
+	if changed then
+		self:UpdateLayout()
 	end
 end
 
--- Get the Blizzard role of the GUID.
-function GridLayoutByRole:GetBlizzardRole(guid, unit)
-	-- Get and cache the Blizzard role.
-	local role = self.blizzardRoleByGUID[guid]
+function GridLayoutByRole:OnUnitRoleChanged(event, guid, unit, oldRole, newRole)
+	self:Debug("OnUnitRoleChanged", event, guid, unit, oldRole, newRole)
+	if IsGroupMember(guid, unit) then
+		local raidRole = self:ToRaidRole(guid, newRole)
+		local changed = self:UpdateRole(guid, raidRole)
+		if changed then
+			self:UpdateLayout()
+		end
+	end
+end
+
+---------------------------------------------------------------------
+
+-- Update the class of the unit.
+function GridLayoutByRole:UpdateClass(guid, unit)
+	unit = unit or GridRoster:GetUnitidByGUID(guid)
+	-- Only update class if it hasn't been determined yet.
+	if not self.classByGUID[guid] then
+		local _, class = UnitClass(unit)
+		if class then
+			self.classByGUID[guid] = class
+			self:Debug("UpdateClass", guid, unit, class)
+		end
+	end
+end
+
+-- Update the role associated with the GUID to the given role.
+function GridLayoutByRole:UpdateRole(guid, role)
 	if not role then
-		role = UnitGroupRolesAssigned(unit)
-		self.blizzardRoleByGUID[guid] = role
+		local mooRole = MooSpec:GetRole(guid)
+		role = self:ToRaidRole(guid, mooRole)
+	end
+	local changed = false
+	local oldRole = self.roleByGUID[guid]
+	if oldRole ~= role then
+		self:Debug("UpdateRole", guid, oldRole, role)
+		self.roleByGUID[guid] = role
+		if oldRole and self.roleGroup[oldRole][guid] then
+			self.roleGroup[oldRole][guid] = nil
+			changed = true
+		end
+		if not self.roleGroup[role][guid] then
+			self.roleGroup[role][guid] = true
+			changed = true
+		end
+	end
+	return changed
+end
+
+-- Convert the role associated with the GUID to the raid role,
+-- accounting for melee healers and Blizzard roles.
+function GridLayoutByRole:ToRaidRole(guid, role)
+	-- Don't allow a raid role of "none".
+	if role == "none" then
+		role = "ranged"
+	end
+	-- Adjust raid role if this healer is a "melee healer".
+	if role == "healer" then
+		local class = self.classByGUID[guid]
+		if class and self.db.profile.meleeHealer[class] then
+			role = "melee"
+		end
+	end
+	-- Prefer the Blizzard role for tanks and healers if requested.
+	if self.db.profile.useBlizzardRole then
+		local blizzardRole = MooSpec:GetBlizzardRole(guid)
+		if blizzardRole == "TANK" then
+			role = "tank"
+		elseif blizzardRole == "HEALER" then
+			role = "healer"
+		end
 	end
 	return role
 end
 
-do
-	-- Default roles for each class.
-	local roleByClass = {
-		DEATHKNIGHT = MELEE,
-		DEMONHUNTER = MELEE,
-		DRUID = RANGED,
-		HUNTER = RANGED,
-		MAGE = RANGED,
-		MONK = MELEE,
-		PALADIN = MELEE,
-		PRIEST = RANGED,
-		ROGUE = MELEE,
-		SHAMAN = RANGED,
-		WARLOCK = RANGED,
-		WARRIOR = MELEE,
-	}
+---------------------------------------------------------------------
 
-	function GridLayoutByRole:GetDefaultRole(unit, class)
-		local role
-		if isPetUnit(unit) then
-			role = PET
-		else
-			if not class then
-				local _, classFile = UnitClass(unit)
-				class = classFile
-			end
-			-- Initialize to a default role.
-			role = class and roleByClass[class] or RANGED
-		end
-		return role
+-- Update the raid roles of the entire roster.
+function GridLayoutByRole:UpdateRoster()
+	local changed = false
+	for guid in GridRoster:IterateRoster() do
+		local updated = self:UpdateRole(guid)
+		changed = changed or updated
 	end
-end
-
-do
-	-- Map return values from GetInspectSpecialization() to roles.
-	-- ref: https://www.wowpedia.org/API_GetInspectSpecialization
-	local roleBySpecialization = {
-		-- Death Knight
-		[250] = TANK,	-- Blood
-		[251] = MELEE,	-- Frost
-		[252] = MELEE,	-- Unholy
-		-- Demon Hunter
-		[577] = MELEE,	-- Havoc
-		[581] = TANK,	-- Vengeance
-		-- Druid
-		[102] = RANGED,	-- Balance
-		[103] = MELEE,	-- Feral
-		[104] = TANK,	-- Guardian
-		[105] = HEALER,	-- Restoration
-		-- Hunter
-		[253] = RANGED,	-- Beast Mastery
-		[254] = RANGED,	-- Marksmanship
-		[255] = MELEE,	-- Survival
-		-- Mage
-		[62] = RANGED,	-- Arcane
-		[63] = RANGED,	-- Fire
-		[64] = RANGED,	-- Frost
-		-- Monk
-		[268] = TANK,	-- Brewmaster
-		[270] = HEALER,	-- Mistweaver
-		[269] = MELEE,	-- Windwalker
-		-- Paladin
-		[65] = HEALER,	-- "Holy
-		[66] = TANK,	-- "Protection
-		[67] = MELEE,	-- "Retribution
-		-- Priest
-		[256] = HEALER,	-- Discipline
-		[257] = HEALER,	-- Holy
-		[258] = RANGED,	-- Shadow
-		-- Rogue
-		[259] = MELEE,	-- Assassination
-		[260] = MELEE,	-- Outlaw
-		[261] = MELEE,	-- Subtlety
-		-- Shaman
-		[262] = RANGED,	-- Elemental
-		[263] = MELEE,	-- Enhancement
-		[264] = HEALER,	-- Restoration
-		-- Warlock
-		[265] = RANGED,	-- Affliction
-		[266] = RANGED,	-- Demonology
-		[267] = RANGED,	-- Destruction
-		-- Warrior
-		[71] = MELEE,	-- Arms
-		[72] = MELEE,	-- Fury
-		[73] = TANK,	-- Protection
-	}
-
-	-- Returns the specialization ID and class of the unit if available, or nil otherwise.
-	function GridLayoutByRole:GetUnitSpecialization(unit)
-		local specialization = GetInspectSpecialization(unit)
-		-- Validate the return value against the table of possible IDs.
-		if not roleBySpecialization[specialization] then
-			specialization = nil
-		end
-		local _, class = UnitClass(unit)
-		return specialization, class
-	end
-
-	-- Get the role of the GUID as determined by class and specialization.
-	function GridLayoutByRole:GetRole(guid, unit, class, specialization)
-		local role = self:GetDefaultRole(unit, class)
-		local specRole = roleBySpecialization[specialization]
-		if specRole then
-			role = specRole
-		else
-			self:Debug("GetRole", guid, unit, class, specialization, "UNKNOWN SPECIALIZATION")
-		end
-		-- Adjust raid role if this healer is a "melee healer".
-		if role == HEALER and self.db.profile.meleeHealer[class] then
-			role = MELEE
-		end
-		-- Prefer the Blizzard role for tanks and healers if requested.
-		if self.db.profile.useBlizzardRole then
-			local blizzardRole = self:GetBlizzardRole(guid, unit)
-			if blizzardRole == "TANK" or blizzardRole == "HEALER" then
-				role = blizzardRole
-			end
-		end
-		return role
+	if changed then
+		self:UpdateLayout()
 	end
 end
 
@@ -599,29 +376,6 @@ do
 	end
 end
 
--- Update the role associated with the GUID.
--- QueueRoleCheck() should be called before this to ensure the role
--- information is correct.
-function GridLayoutByRole:UpdateRole(guid, unit, role)
-	self:Debug("UpdateRole", guid, unit, role)
-	local oldRole = self.roleByGUID[guid]
-	if oldRole ~= role then
-		self.roleByGUID[guid] = role
-		if oldRole then
-			self.roleGroup[oldRole][guid] = nil
-		end
-		self.roleGroup[role][guid] = true
-		-- Fire a message that the unit's role has changed.
-		self:SendMessage("Grid_UnitRoleChanged", guid, unit, oldRole, role)
-	end
-end
-
-function GridLayoutByRole:InspectUnits()
-	for guid, unit in GridRoster:IterateRoster() do
-		self:QueueRoleCheck("InspectUnits", guid, unit)
-	end
-end
-
 function GridLayoutByRole:UpdateLayout()
 	self:Debug("UpdateLayout")
 	-- Get the maximum number of players in the group.
@@ -633,7 +387,7 @@ function GridLayoutByRole:UpdateLayout()
 	end
 	local unitsPerColumn = MEMBERS_PER_RAID_GROUP
 	local maxColumns = ceil(maxPlayers / unitsPerColumn)
-	local changed
+	local changed = false
 
 	-- Update the default attributes.
 	local defaults = self.layout.defaults
