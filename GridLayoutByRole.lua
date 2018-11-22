@@ -359,9 +359,11 @@ end
 -- Update the raid roles of the entire roster.
 function GridLayoutByRole:UpdateRoster()
 	local changed = false
-	for guid in GridRoster:IterateRoster() do
-		local updated = self:UpdateRole(guid)
-		changed = changed or updated
+	for guid, unit in GridRoster:IterateRoster() do
+		if UnitIsPlayer(unit) then
+			local updated = self:UpdateRole(guid)
+			changed = changed or updated
+		end
 	end
 	if changed then
 		self:UpdateLayout()
