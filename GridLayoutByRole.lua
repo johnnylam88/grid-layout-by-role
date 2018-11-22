@@ -268,6 +268,8 @@ end
 function GridLayoutByRole:OnUnitLeft(event, guid)
 	self:Debug("OnUnitLeft", event, guid)
 	local changed = false
+	self.roleByGUID[guid] = nil
+	self.classByGUID[guid] = nil
 	for _, group in pairs(self.roleGroup) do
 		if group[guid] then
 			group[guid] = nil
