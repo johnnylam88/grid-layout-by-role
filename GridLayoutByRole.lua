@@ -311,6 +311,10 @@ function GridLayoutByRole:UpdateRole(guid, role)
 		local mooRole = MooSpec:GetRole(guid)
 		role = self:ToRaidRole(guid, mooRole)
 	end
+	if role == "none" then
+		self:Debug("UpdateRole: %s has no role; changing to 'ranged'.", guid)
+		role = "ranged"
+	end
 	local changed = false
 	local oldRole = self.roleByGUID[guid]
 	if oldRole ~= role then
@@ -331,10 +335,6 @@ end
 -- Convert the role associated with the GUID to the raid role,
 -- accounting for melee healers and Blizzard roles.
 function GridLayoutByRole:ToRaidRole(guid, role)
-	-- Don't allow a raid role of "none".
-	if role == "none" then
-		role = "ranged"
-	end
 	-- Adjust raid role if this healer is a "melee healer".
 	if role == "healer" then
 		local class = self.classByGUID[guid]
