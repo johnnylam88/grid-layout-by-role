@@ -64,14 +64,6 @@ GridLayoutByRole.layout = {}
 GridLayoutByRole.roleByGUID = {}
 -- Map GUIDs to classes ("PALADIN", "MONK", etc.)
 GridLayoutByRole.classByGUID = {}
--- List of tables of GUIDs by role.
--- roleGroup[role][guid] is true if guid is in that role.
-GridLayoutByRole.roleGroup = {
-	tank = {},
-	melee = {},
-	healer = {},
-	ranged = {},
-}
 
 do
 	GridLayoutByRole.defaultDB = {
@@ -218,6 +210,11 @@ local function binaryInsert(t, value)
 	return low
 end
 
+-- Returns true if the unit is on the roster and is a player (not a pet or vehicle).
+local function IsGroupMember(guid, unit)
+	return GridRoster:IsGUIDInGroup(guid) and UnitIsPlayer(unit)
+end
+
 ---------------------------------------------------------------------
 
 function GridLayoutByRole:PostInitialize()
@@ -235,104 +232,26 @@ function GridLayoutByRole:PostInitialize()
 end
 
 function GridLayoutByRole:PostEnable()
-	self:RegisterMessage("Grid_UnitChanged", "OnUnitJoined")
-	self:RegisterMessage("Grid_UnitJoined", "OnUnitJoined")
-	self:RegisterMessage("Grid_UnitLeft", "OnUnitLeft")
+	self:RegisterMessage("Grid_RosterUpdated", "UpdateRoster")
 	MooSpec.RegisterCallback(self, "MooSpec_UnitRoleChanged", "OnUnitRoleChanged")
 end
 
 function GridLayoutByRole:PostDisable()
-	self:UnregisterMessage("Grid_UnitChanged")
-	self:UnregisterMessage("Grid_UnitJoined")
-	self:UnregisterMessage("Grid_UnitLeft")
+	self:UnregisterMessage("Grid_RosterUpdated")
 	MooSpec.UnregisterCallback(self, "MooSpec_UnitRoleChanged")
 end
 
----------------------------------------------------------------------
-
-local function IsGroupMember(guid, unit)
-	return GridRoster:IsGUIDInGroup(guid) and UnitIsPlayer(unit)
-end
-
-function GridLayoutByRole:OnUnitJoined(event, guid, unit)
-	self:Debug("OnUnitJoined", event, guid, unit)
+function GridLayoutByRole:OnUnitRoleChanged(event, guid, unit, oldRole, newRole)
 	if IsGroupMember(guid, unit) then
 		self:UpdateClass(guid, unit)
-		local changed = self:UpdateRole(guid)
-		if changed then
-			self:UpdateLayout()
-		end
-	end
-end
-
-function GridLayoutByRole:OnUnitLeft(event, guid)
-	self:Debug("OnUnitLeft", event, guid)
-	local changed = false
-	self.roleByGUID[guid] = nil
-	self.classByGUID[guid] = nil
-	for _, group in pairs(self.roleGroup) do
-		if group[guid] then
-			group[guid] = nil
-			changed = true
-		end
-	end
-	if changed then
-		self:UpdateLayout()
-	end
-end
-
-function GridLayoutByRole:OnUnitRoleChanged(event, guid, unit, oldRole, newRole)
-	self:Debug("OnUnitRoleChanged", event, guid, unit, oldRole, newRole)
-	if IsGroupMember(guid, unit) then
-		local raidRole = self:ToRaidRole(guid, newRole)
-		local changed = self:UpdateRole(guid, raidRole)
-		if changed then
+		local updated = self:UpdateRole(guid, unit, newRole)
+		if updated then
 			self:UpdateLayout()
 		end
 	end
 end
 
 ---------------------------------------------------------------------
-
--- Update the class of the unit.
-function GridLayoutByRole:UpdateClass(guid, unit)
-	unit = unit or GridRoster:GetUnitidByGUID(guid)
-	-- Only update class if it hasn't been determined yet.
-	if not self.classByGUID[guid] then
-		local _, class = UnitClass(unit)
-		if class then
-			self.classByGUID[guid] = class
-			self:Debug("UpdateClass", guid, unit, class)
-		end
-	end
-end
-
--- Update the role associated with the GUID to the given role.
-function GridLayoutByRole:UpdateRole(guid, role)
-	if not role then
-		local mooRole = MooSpec:GetRole(guid)
-		role = self:ToRaidRole(guid, mooRole)
-	end
-	if role == "none" then
-		self:Debug("UpdateRole: %s has no role; changing to 'ranged'.", guid)
-		role = "ranged"
-	end
-	local changed = false
-	local oldRole = self.roleByGUID[guid]
-	if oldRole ~= role then
-		self:Debug("UpdateRole", guid, oldRole, role)
-		self.roleByGUID[guid] = role
-		if oldRole and self.roleGroup[oldRole][guid] then
-			self.roleGroup[oldRole][guid] = nil
-			changed = true
-		end
-		if not self.roleGroup[role][guid] then
-			self.roleGroup[role][guid] = true
-			changed = true
-		end
-	end
-	return changed
-end
 
 -- Convert the role associated with the GUID to the raid role,
 -- accounting for melee healers and Blizzard roles.
@@ -356,19 +275,80 @@ function GridLayoutByRole:ToRaidRole(guid, role)
 	return role
 end
 
+-- Get the raid role for the GUID.
+function GridLayoutByRole:GetRaidRole(guid, role)
+	if not role then
+		local mooRole = MooSpec:GetRole(guid)
+		role = self:ToRaidRole(guid, mooRole)
+	end
+	if role == "none" then
+		self:Debug("GetRaidRole: %s has no role; changing to 'ranged'.", guid)
+		role = "ranged"
+	end
+	return role
+end
+
 ---------------------------------------------------------------------
 
--- Update the raid roles of the entire roster.
-function GridLayoutByRole:UpdateRoster()
-	local changed = false
-	for guid, unit in GridRoster:IterateRoster() do
-		if UnitIsPlayer(unit) then
-			local updated = self:UpdateRole(guid)
-			changed = changed or updated
+-- Update the class of the unit.
+function GridLayoutByRole:UpdateClass(guid, unit)
+	unit = unit or GridRoster:GetUnitidByGUID(guid)
+	-- Only update class if it hasn't been determined yet.
+	if not self.classByGUID[guid] then
+		local _, class = UnitClass(unit)
+		if class then
+			self.classByGUID[guid] = class
+			self:Debug("UpdateClass", guid, unit, class)
 		end
 	end
-	if changed then
-		self:UpdateLayout()
+end
+
+-- Update the role of the unit.  The role is automatically determined if newRole is nil.
+function GridLayoutByRole:UpdateRole(guid, unit, newRole)
+	local oldRole = self.roleByGUID[guid]
+	local role = self:GetRaidRole(guid, newRole)
+	if oldRole ~= role then
+		self:Debug("UpdateRole", guid, unit, oldRole, role)
+		self.roleByGUID[guid] = role
+		return true
+	end
+	return false
+end
+
+-- Update the roles of the entire roster.
+do
+	local unitLeft = {}
+
+	function GridLayoutByRole:UpdateRoster()
+		-- unitLeft is empty.
+		for guid in pairs(self.roleByGUID) do
+			unitLeft[guid] = true
+		end
+		local changed = false
+		for guid, unit in GridRoster:IterateRoster() do
+			if IsGroupMember(guid, unit) then
+				unitLeft[guid] = nil
+				self:UpdateClass(guid, unit)
+				local updated = self:UpdateRole(guid, unit)
+				if updated then
+					changed = true
+				end
+			end
+		end
+		-- Every GUID on the group roster is in roleByGUID.
+		-- unitLeft contains GUIDs in roleByGUID that are not on the group roster.
+		for guid in pairs(unitLeft) do
+			self:Debug("UpdateRoster", guid, "LEFT")
+			self.classByGUID[guid] = nil
+			self.roleByGUID[guid] = nil
+			unitLeft[guid] = nil
+			changed = true
+		end
+		-- Every GUID in roleByGUID is on the group roster.
+		-- unitLeft is empty.
+		if changed then
+			self:UpdateLayout()
+		end
 	end
 end
 
@@ -379,8 +359,10 @@ do
 	-- separated by commas.
 	function GridLayoutByRole:NameList(role)
 		wipe(t)
-		for guid in pairs(self.roleGroup[role]) do
-			binaryInsert(t, GridRoster:GetFullNameByGUID(guid))
+		for guid, guidRole in pairs(self.roleByGUID) do
+			if guidRole == role then
+				binaryInsert(t, GridRoster:GetFullNameByGUID(guid))
+			end
 		end
 		return tconcat(t, ",")
 	end
