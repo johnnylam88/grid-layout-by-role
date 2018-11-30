@@ -30,7 +30,6 @@ local wipe = table.wipe
 -- GLOBALS: GetClassInfo
 -- GLOBALS: GetInstanceInfo
 -- GLOBALS: LibStub
--- GLOBALS: UnitClass
 -- GLOBALS: UnitGUID
 -- GLOBALS: UnitIsPlayer
 local MAX_RAID_MEMBERS = MAX_RAID_MEMBERS -- FrameXML/RaidFrame.lua
@@ -62,8 +61,6 @@ GridLayoutByRole.layout = {}
 
 -- Map GUIDs to roles ("tank", "melee", "healer", "ranged").
 GridLayoutByRole.roleByGUID = {}
--- Map GUIDs to classes ("PALADIN", "MONK", etc.)
-GridLayoutByRole.classByGUID = {}
 
 do
 	GridLayoutByRole.defaultDB = {
@@ -243,7 +240,6 @@ end
 
 function GridLayoutByRole:OnUnitRoleChanged(event, guid, unit, oldRole, newRole)
 	if IsGroupMember(guid, unit) then
-		self:UpdateClass(guid, unit)
 		local updated = self:UpdateRole(guid, unit, newRole)
 		if updated then
 			self:UpdateLayout()
@@ -258,7 +254,7 @@ end
 function GridLayoutByRole:ToRaidRole(guid, role)
 	-- Adjust raid role if this healer is a "melee healer".
 	if role == "healer" then
-		local class = self.classByGUID[guid]
+		local class = MooSpec:GetClass(guid)
 		if class and self.db.profile.meleeHealer[class] then
 			role = "melee"
 		end
@@ -290,19 +286,6 @@ end
 
 ---------------------------------------------------------------------
 
--- Update the class of the unit.
-function GridLayoutByRole:UpdateClass(guid, unit)
-	unit = unit or GridRoster:GetUnitidByGUID(guid)
-	-- Only update class if it hasn't been determined yet.
-	if not self.classByGUID[guid] then
-		local _, class = UnitClass(unit)
-		if class then
-			self.classByGUID[guid] = class
-			self:Debug("UpdateClass", guid, unit, class)
-		end
-	end
-end
-
 -- Update the role of the unit.  The role is automatically determined if newRole is nil.
 function GridLayoutByRole:UpdateRole(guid, unit, newRole)
 	local oldRole = self.roleByGUID[guid]
@@ -328,7 +311,6 @@ do
 		for guid, unit in GridRoster:IterateRoster() do
 			if IsGroupMember(guid, unit) then
 				unitLeft[guid] = nil
-				self:UpdateClass(guid, unit)
 				local updated = self:UpdateRole(guid, unit)
 				if updated then
 					changed = true
@@ -339,7 +321,6 @@ do
 		-- unitLeft contains GUIDs in roleByGUID that are not on the group roster.
 		for guid in pairs(unitLeft) do
 			self:Debug("UpdateRoster", guid, "LEFT")
-			self.classByGUID[guid] = nil
 			self.roleByGUID[guid] = nil
 			unitLeft[guid] = nil
 			changed = true
