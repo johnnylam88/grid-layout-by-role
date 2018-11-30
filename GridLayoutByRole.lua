@@ -36,8 +36,8 @@ local MAX_RAID_MEMBERS = MAX_RAID_MEMBERS -- FrameXML/RaidFrame.lua
 local MEMBERS_PER_RAID_GROUP = MEMBERS_PER_RAID_GROUP -- FrameXML/RaidFrame.lua
 
 local GridLayout = Grid:GetModule("GridLayout")
-local GridRoster = Grid:GetModule("GridRoster")
 local MooSpec = LibStub("MooSpec-1.0")
+local MooUnit = LibStub("MooUnit-1.0")
 
 -- The localized string table.
 local L = Grid.L
@@ -209,7 +209,7 @@ end
 
 -- Returns true if the unit is on the roster and is a player (not a pet or vehicle).
 local function IsGroupMember(guid, unit)
-	return GridRoster:IsGUIDInGroup(guid) and UnitIsPlayer(unit)
+	return MooUnit:IsGUIDInGroup(guid) and UnitIsPlayer(unit)
 end
 
 ---------------------------------------------------------------------
@@ -229,12 +229,12 @@ function GridLayoutByRole:PostInitialize()
 end
 
 function GridLayoutByRole:PostEnable()
-	self:RegisterMessage("Grid_RosterUpdated", "UpdateRoster")
+	MooUnit.RegisterCallback(self, "MooUnit_RosterUpdated", "UpdateRoster")
 	MooSpec.RegisterCallback(self, "MooSpec_UnitRoleChanged", "OnUnitRoleChanged")
 end
 
 function GridLayoutByRole:PostDisable()
-	self:UnregisterMessage("Grid_RosterUpdated")
+	MooUnit.UnregisterCallback(self, "MooUnit_RosterUpdated")
 	MooSpec.UnregisterCallback(self, "MooSpec_UnitRoleChanged")
 end
 
@@ -308,7 +308,7 @@ do
 			unitLeft[guid] = true
 		end
 		local changed = false
-		for guid, unit in GridRoster:IterateRoster() do
+		for guid, unit in MooUnit:IterateRoster() do
 			if IsGroupMember(guid, unit) then
 				unitLeft[guid] = nil
 				local updated = self:UpdateRole(guid, unit)
@@ -342,7 +342,8 @@ do
 		wipe(t)
 		for guid, guidRole in pairs(self.roleByGUID) do
 			if guidRole == role then
-				binaryInsert(t, GridRoster:GetFullNameByGUID(guid))
+				local name = MooUnit:GetNameByGUID(guid)
+				binaryInsert(t, name)
 			end
 		end
 		return tconcat(t, ",")
