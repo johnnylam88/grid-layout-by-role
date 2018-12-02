@@ -255,9 +255,8 @@ function GridLayoutByRole:OnUnitJoined(event, guid, unit)
 		self:Debug("OnUnitJoined", event, guid, unit)
 		local mooRole = MooSpec:GetRole(guid)
 		local role = self:ToRaidRole(guid, mooRole)
-		if self:UpdateRole(guid, role) then
-			self:UpdateLayout()
-		end
+		self:UpdateRole(guid, role)
+		self:UpdateLayout()
 	end
 end
 
