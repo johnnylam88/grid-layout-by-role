@@ -345,27 +345,16 @@ function GridLayoutByRole:UpdateLayout()
 	end
 	local unitsPerColumn = MEMBERS_PER_RAID_GROUP
 	local maxColumns = ceil(maxPlayers / unitsPerColumn)
-	local changed = false
 
 	-- Update the default attributes.
 	local defaults = self.layout.defaults
-	if defaults.unitsPerColumn ~= unitsPerColumn then
-		defaults.unitsPerColumn = unitsPerColumn
-		changed = true
-	end
-	if defaults.maxColumns ~= maxColumns then
-		defaults.maxColumns = maxColumns
-		changed = true
-	end
+	defaults.unitsPerColumn = unitsPerColumn
+	defaults.maxColumns = maxColumns
 
 	-- Update the nameList attribute in each layout group.
 	for i, role in ipairs(self.db.profile.role) do
 		local group = self.layout[i]
-		local nameList = self:NameList(role)
-		if group.nameList ~= nameList then
-			group.nameList = nameList
-			changed = true
-		end
+		group.nameList = self:NameList(role)
 	end
 
 	-- Add the pet group if selected.
@@ -377,8 +366,5 @@ function GridLayoutByRole:UpdateLayout()
 	end
 
 	-- Apply changes.
-	if changed then
-		GridLayout:ReloadLayout()
-	end
-	return true
+	GridLayout:ReloadLayout()
 end
