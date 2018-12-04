@@ -244,9 +244,8 @@ function GridLayoutByRole:OnUnitRoleChanged(event, guid, unit, oldRole, newRole)
 	if IsGroupMember(guid, unit) then
 		self:Debug("OnUnitRoleChanged", event, guid, unit, oldRole, newRole)
 		local role = self:ToRaidRole(guid, newRole)
-		if self:UpdateRole(guid, role) then
-			self:UpdateLayout()
-		end
+		self:UpdateRole(guid, role)
+		self:UpdateLayout()
 	end
 end
 
@@ -301,9 +300,7 @@ function GridLayoutByRole:UpdateRole(guid, role)
 	if oldRole ~= role then
 		self:Debug("UpdateRole", guid, oldRole, role)
 		self.roleByGUID[guid] = role
-		return true
 	end
-	return false
 end
 
 -- Update the roles of the entire roster.
